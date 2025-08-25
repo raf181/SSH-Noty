@@ -1,0 +1,6 @@
+dist/
+ssh-noti
+.idea/
+.vscode/
+*.log
+config.json

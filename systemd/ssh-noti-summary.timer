@@ -1,0 +1,9 @@
+[Unit]
+Description=SSH Notifier Summary (hourly)
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

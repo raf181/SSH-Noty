@@ -1,0 +1,8 @@
+[Unit]
+Description=SSH Notifier Summary Run
+
+[Service]
+Type=oneshot
+User=sshnoti
+Group=sshnoti
+ExecStart=/opt/ssh-noti/ssh-noti --batch --config=/opt/ssh-noti/config.json

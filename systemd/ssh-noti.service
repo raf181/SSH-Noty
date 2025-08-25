@@ -1,0 +1,16 @@
+[Unit]
+Description=SSH Notifier (Go)
+After=network-online.target
+
+[Service]
+Type=simple
+User=sshnoti
+Group=sshnoti
+ExecStart=/opt/ssh-noti/ssh-noti --daemon --config=/opt/ssh-noti/config.json
+Restart=always
+RestartSec=5
+AmbientCapabilities=
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

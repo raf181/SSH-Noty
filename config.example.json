@@ -1,0 +1,23 @@
+{
+  "slack_webhook": "https://hooks.slack.com/services/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",
+  "mode": "realtime",
+  "sources": {
+    "prefer": "auto",
+    "file_paths": ["/var/log/auth.log", "/var/log/secure"],
+    "systemd_units": ["sshd.service", "ssh.service"]
+  },
+  "rules": {
+    "notify_success": true,
+    "notify_failure": true,
+    "notify_invalid_user": true,
+    "notify_root_login": true,
+    "exclude_users": ["backup", "postfix"],
+    "exclude_ips": ["10.0.0.0/8", "192.168.0.0/16"],
+    "include_ips": []
+  },
+  "rate_limit": { "window_seconds": 60, "max_events_per_window": 20, "dedup_window_seconds": 30 },
+  "batch": { "window_seconds": 3600, "min_failed_threshold": 5 },
+  "geoip": { "enabled": false, "db_path": "/usr/share/GeoIP/GeoLite2-City.mmdb" },
+  "formatting": { "concise": false, "show_key_fingerprint": true, "show_hostname": true },
+  "telemetry": { "log_level": "INFO", "log_file": "/var/log/ssh-noti.log" }
+}
