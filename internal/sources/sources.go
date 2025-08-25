@@ -21,20 +21,39 @@ type Source interface {
 
 func SelectSource(ctx context.Context, cfg *config.Config) (Source, error) {
 	prefer := cfg.Sources.Prefer
-	if prefer == "auto" || prefer == "journald" {
-		if _, err := exec.LookPath("journalctl"); err == nil {
-			return &JournalctlFollower{Units: cfg.Sources.SystemdUnits}, nil
-		}
-		if prefer == "journald" {
-			return nil, errors.New("journalctl not found")
-		}
+	hasJournal := false
+	if _, err := exec.LookPath("journalctl"); err == nil {
+		hasJournal = true
 	}
-	// fallback to file tail
+
+	// Build file follower if paths available
 	paths := cfg.Sources.FilePaths
 	if len(paths) == 0 {
 		paths = []string{"/var/log/auth.log", "/var/log/secure", "/var/log/messages"}
 	}
-	return &FileFollower{Paths: paths}, nil
+	fileSrc := &FileFollower{Paths: paths}
+
+	switch prefer {
+	case "journald":
+		if !hasJournal {
+			return nil, errors.New("journalctl not found")
+		}
+		return &JournalctlFollower{Units: cfg.Sources.SystemdUnits}, nil
+	case "file":
+		return fileSrc, nil
+	case "auto":
+		if hasJournal {
+			// Run both to be safe; Multi will merge
+			return &MultiSource{Sources: []Source{&JournalctlFollower{Units: cfg.Sources.SystemdUnits}, fileSrc}}, nil
+		}
+		return fileSrc, nil
+	default:
+		// unknown prefer value, default to auto behavior
+		if hasJournal {
+			return &MultiSource{Sources: []Source{&JournalctlFollower{Units: cfg.Sources.SystemdUnits}, fileSrc}}, nil
+		}
+		return fileSrc, nil
+	}
 }
 
 // JournalctlFollower streams journal entries for sshd units and emits RawRecord lines from MESSAGE
@@ -135,4 +154,49 @@ func (f *FileFollower) Start(ctx context.Context) (<-chan parser.RawRecord, erro
 		}
 	}()
 	return ch, nil
+}
+
+// MultiSource merges events from multiple sources into a single channel.
+type MultiSource struct {
+	Sources []Source
+}
+
+func (m *MultiSource) Name() string {
+	names := make([]string, 0, len(m.Sources))
+	for _, s := range m.Sources {
+		names = append(names, s.Name())
+	}
+	return "multi(" + strings.Join(names, ",") + ")"
+}
+
+func (m *MultiSource) Start(ctx context.Context) (<-chan parser.RawRecord, error) {
+	out := make(chan parser.RawRecord, 256)
+	// Start each source and fan-in
+	for _, s := range m.Sources {
+		src := s
+		recs, err := src.Start(ctx)
+		if err != nil {
+			// if one source fails, continue with others
+			continue
+		}
+		go func(c <-chan parser.RawRecord) {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case r, ok := <-c:
+					if !ok {
+						return
+					}
+					out <- r
+				}
+			}
+		}(recs)
+	}
+	// Close out when context is cancelled
+	go func() {
+		<-ctx.Done()
+		close(out)
+	}()
+	return out, nil
 }
