@@ -25,16 +25,34 @@ jobs:
         env:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: 0
+          CGO_ENABLED: "0"
         run: |
           mkdir -p dist
-          PKG="./cmd/ssh-noti"
-          if [[ ! -d "$PKG" ]]; then
-            echo "Default package $PKG not found; attempting to auto-detect main package..."
-            PKG=$(go list -f '{{if eq .Name "main"}}{{.Dir}}{{end}}' ./... | grep -v '^$' | head -n1)
-          fi
+          # Try common candidate main package paths first
+          CANDIDATES=(
+            "./cmd/ssh-noti"
+            "./cmd/ssh-notify"
+            "./cmd"
+            "."
+          )
+          PKG=""
+          for c in "${CANDIDATES[@]}"; do
+            if [[ -f "$c/main.go" ]]; then
+              PKG="$c"
+              break
+            fi
+          done
+          # Fallback: scan with go list for any main package
           if [[ -z "$PKG" ]]; then
-            echo "ERROR: Could not locate a main package to build. Ensure your main package is present (e.g., ./cmd/ssh-noti)." >&2
+            echo "Default candidates not found; attempting go list scan..."
+            PKG=$(go list -f '{{if eq .Name "main"}}{{.Dir}}{{end}}' ./... | grep -v '^$' | head -n1 || true)
+          fi
+          # Diagnostics if still not found
+          if [[ -z "$PKG" ]]; then
+            echo "ERROR: Could not locate a main package to build. Ensure your main package is committed (e.g., ./cmd/ssh-noti/main.go)." >&2
+            echo "Repo tree (top-level):"; ls -la
+            echo "cmd/ tree:"; ls -la cmd || true
+            echo "go list output:"; go list ./... || true
             exit 1
           fi
           echo "Building package: $PKG"
