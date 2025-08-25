@@ -106,6 +106,8 @@ func runDaemon(cfg *config.Config) {
 				if !dedup.ShouldSend(&ev) {
 					continue
 				}
+				// Always emit a debug summary of the event to aid troubleshooting.
+				log.Debug("event", "type", ev.Type, "user", ev.Username, "ip", ev.SourceIP, "method", ev.Method, "port", ev.Port)
 				if cfg.SlackWebhook == "" {
 					log.Info("event", "type", ev.Type, "user", ev.Username, "ip", ev.SourceIP, "method", ev.Method)
 					continue
