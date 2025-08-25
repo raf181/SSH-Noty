@@ -1,5 +1,8 @@
 # SSH-Noty (Go)
 
+[![CI](https://github.com/raf181/SSH-Noty/actions/workflows/ci.yml/badge.svg)](https://github.com/raf181/SSH-Noty/actions/workflows/ci.yml)
+[![Release](https://github.com/raf181/SSH-Noty/actions/workflows/release.yml/badge.svg)](https://github.com/raf181/SSH-Noty/actions/workflows/release.yml)
+
 Lightweight Linux agent that detects SSH successful and failed logins in near real-time and posts notifications to Slack. Supports journald and plain-text log tailing, rate limiting, deduplication, and optional batch summaries.
 
 Status: initial scaffold with realtime daemon, Slack test, and basic journald/file parsing.
@@ -14,6 +17,12 @@ go build ./cmd/ssh-noti
 ```
 
 Binary at `./ssh-noti`.
+
+## Remote builds (CI)
+
+- Every push and PR triggers CI to build linux/amd64 and linux/arm64 binaries.
+- Download artifacts from the latest workflow run: GitHub → Actions → CI → latest run → Artifacts.
+- Tagged releases (vX.Y.Z) also publish binaries that the installer script fetches automatically.
 
 ## Quick run
 

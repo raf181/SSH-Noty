@@ -1,9 +1,9 @@
-name: release
+name: ci
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [ main ]
+  pull_request:
   workflow_dispatch: {}
 
 jobs:
@@ -15,13 +15,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.22.x'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.goarch }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
       - name: Download modules
         run: go mod download
-      - name: Build
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build (linux/${{ matrix.goarch }})
         env:
           GOOS: linux
           GOARCH: ${{ matrix.goarch }}
@@ -33,34 +49,14 @@ jobs:
           elif [[ -f "./main.go" ]]; then
             PKG="."
           else
-            echo "ERROR: Could not locate main.go in ./cmd/ssh-noti or repo root. Commit your main package." >&2
-            echo "Repo tree (top-level):"; ls -la
+            echo "ERROR: Could not locate main.go in ./cmd/ssh-noti or repo root." >&2
             exit 1
           fi
           echo "Building package: $PKG"
-          go build -ldflags "-X main.Version=${GITHUB_REF_NAME}" -o dist/ssh-noti_linux_${GOARCH} "$PKG"
+          go build -ldflags "-X main.Version=${GITHUB_SHA}" -o dist/ssh-noti_linux_${GOARCH} "$PKG"
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ssh-noti_linux_${{ matrix.goarch }}
           path: dist/ssh-noti_linux_${{ matrix.goarch }}
-
-  release:
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      contents: write
-    steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-          merge-multiple: true
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/ssh-noti_linux_amd64
-            dist/ssh-noti_linux_arm64
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
