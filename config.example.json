@@ -1,5 +1,5 @@
 {
-  "slack_webhook": "https://hooks.slack.com/services/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",
+  "slack_webhook": "",
   "mode": "realtime",
   "sources": {
     "prefer": "auto",

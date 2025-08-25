@@ -41,10 +41,22 @@ Binary at `./ssh-noti`.
 
 ## Install as service
 
-Option 1: one-line install (downloads latest release):
+Option 1: one-line install (downloads latest stable release; runs service as root by default):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/raf181/SSH-Noty/main/install.sh | sudo bash -s -- --webhook="https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+
+If you want the latest CI build (Nightly prerelease), add --tag=nightly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/raf181/SSH-Noty/main/install.sh | sudo bash -s -- --webhook="https://hooks.slack.com/services/YOUR/WEBHOOK/URL" --tag=nightly
+```
+
+To harden and run under a dedicated user instead of root, add:
+
+```bash
+--service-user=sshnoti
+```
 ```
 
 Option 2: local install script (from repo): see `install-ssh-noti.sh`.

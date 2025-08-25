@@ -16,6 +16,7 @@ DOWNLOAD_ONLY=0  # When 1, only download the binary and exit
 ARCH_OVERRIDE=""
 PREFIX=""        # When set, install under this directory instead of /opt/ssh-noti
 NO_SYSTEMD=0     # When 1, skip systemd unit installation
+SERVICE_USER="root" # Default to running the service as root (can be overridden)
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -26,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     --arch=*) ARCH_OVERRIDE="${1#*=}"; shift ;;
     --prefix=*) PREFIX="${1#*=}"; shift ;;
     --no-systemd) NO_SYSTEMD=1; shift ;;
+    --service-user=*) SERVICE_USER="${1#*=}"; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -51,15 +53,16 @@ if [[ -n "$PREFIX" ]]; then
   STATE_DIR="$INSTALL_DIR/state"
 fi
 
+# Create directories when installing (not in download-only)
 if [[ "$DOWNLOAD_ONLY" -ne 1 ]]; then
   echo "Creating directories..."
   mkdir -p "$INSTALL_DIR" "$STATE_DIR"
 fi
 
+# Determine release tag
 if [[ -z "$TAG" ]]; then
   echo "Fetching latest release for $OWNER_REPO..."
-  # Use GitHub releases redirect to determine latest tag without jq
-  LATEST_URL=$(curl -fsSL -o /dev/null -w '%{url_effective}' https://github.com/${OWNER_REPO}/releases/latest)
+  LATEST_URL=$(curl -fsSL -o /dev/null -w '%{url_effective}' "https://github.com/${OWNER_REPO}/releases/latest")
   LATEST_TAG=${LATEST_URL##*/}
 else
   LATEST_TAG="$TAG"
@@ -69,6 +72,7 @@ fi
 ASSET_URL_AMD64="https://github.com/${OWNER_REPO}/releases/download/${LATEST_TAG}/ssh-noti_linux_amd64"
 ASSET_URL_ARM64="https://github.com/${OWNER_REPO}/releases/download/${LATEST_TAG}/ssh-noti_linux_arm64"
 
+# Determine architecture
 ARCH=$(uname -m)
 if [[ -n "$ARCH_OVERRIDE" ]]; then
   ARCH="$ARCH_OVERRIDE"
@@ -88,18 +92,17 @@ fi
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -L "$DL_URL") || true
 if [[ "$HTTP_STATUS" != "200" ]]; then
   echo "Release asset not found (HTTP $HTTP_STATUS) at: $DL_URL" >&2
-  echo "- Ensure a release/tag '${LATEST_TAG}' exists with Linux binaries."
-  echo "- Or try --tag=nightly after pushing to main (CI creates/updates nightly)."
+  echo "- Ensure a release/tag '${LATEST_TAG}' exists with Linux binaries, or use --tag=nightly."
   exit 1
 fi
 
+# Download binary
 TMP_BIN=$(mktemp)
 echo "Downloading $DL_URL ..."
 curl -fsSL "$DL_URL" -o "$TMP_BIN"
 
 if [[ "$DOWNLOAD_ONLY" -eq 1 ]]; then
   OUT_NAME="$PWD/${BIN_NAME}"
-  # If cross-arch, append suffix for clarity
   if [[ "$ARCH" == "arm64" || "$ARCH" == "aarch64" ]]; then
     OUT_NAME+="_linux_arm64"
   else
@@ -114,7 +117,7 @@ fi
 install -m 0755 "$TMP_BIN" "$INSTALL_DIR/$BIN_NAME"
 rm -f "$TMP_BIN"
 
-# Write config
+# Write config if missing
 if [[ ! -f "$INSTALL_DIR/config.json" ]]; then
   cat > "$INSTALL_DIR/config.json" <<JSON
 {
@@ -126,43 +129,52 @@ if [[ ! -f "$INSTALL_DIR/config.json" ]]; then
   "batch": { "window_seconds": 3600, "min_failed_threshold": 5 },
   "geoip": { "enabled": false, "db_path": "/usr/share/GeoIP/GeoLite2-City.mmdb" },
   "formatting": { "concise": false, "show_key_fingerprint": true, "show_hostname": true },
-  "telemetry": { "log_level": "INFO", "log_file": "/var/log/ssh-noti.log" }
+  "telemetry": { "log_level": "INFO", "log_file": "" }
 }
 JSON
 fi
 
-chmod 0600 "$INSTALL_DIR/config.json"
-
-# Create system user and perms
+# Config file permissions
 if [[ "$NO_SYSTEMD" -ne 1 ]]; then
-  if ! id -u sshnoti >/dev/null 2>&1; then
-    useradd --system --no-create-home --shell /usr/sbin/nologin sshnoti || true
-  fi
-  for g in adm systemd-journal; do
-    if getent group "$g" >/dev/null 2>&1; then
-      usermod -a -G "$g" sshnoti || true
+  if [[ "$SERVICE_USER" != "root" ]]; then
+    if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
+      useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER" || true
     fi
-  done
+    chown "$SERVICE_USER":"$SERVICE_USER" "$INSTALL_DIR/config.json"
+    chmod 0640 "$INSTALL_DIR/config.json"
+  else
+    chown root:root "$INSTALL_DIR/config.json"
+    chmod 0600 "$INSTALL_DIR/config.json"
+  fi
+else
+  chmod 0600 "$INSTALL_DIR/config.json"
 fi
 
+# Directory ownership
 chown -R root:root "$INSTALL_DIR"
 chmod 0755 "$INSTALL_DIR"
-chmod 0700 "$STATE_DIR"
+if [[ "$SERVICE_USER" != "root" ]]; then
+  chown -R "$SERVICE_USER":"$SERVICE_USER" "$STATE_DIR"
+  chmod 0700 "$STATE_DIR"
+else
+  chown -R root:root "$STATE_DIR"
+  chmod 0700 "$STATE_DIR"
+fi
 
-# Install systemd units (inline)
+# Systemd units
 if [[ "$NO_SYSTEMD" -ne 1 ]] && command -v systemctl >/dev/null 2>&1; then
   UNIT_DIR="/etc/systemd/system"
   mkdir -p "$UNIT_DIR"
 
-  cat > "$UNIT_DIR/ssh-noti.service" <<'UNIT'
+  cat > "$UNIT_DIR/ssh-noti.service" <<UNIT
 [Unit]
 Description=SSH Notifier (Go)
 After=network-online.target
 
 [Service]
 Type=simple
-User=sshnoti
-Group=sshnoti
+User=${SERVICE_USER}
+Group=${SERVICE_USER}
 ExecStart=/opt/ssh-noti/ssh-noti --daemon --config=/opt/ssh-noti/config.json
 Restart=always
 RestartSec=5
@@ -173,14 +185,14 @@ NoNewPrivileges=true
 WantedBy=multi-user.target
 UNIT
 
-  cat > "$UNIT_DIR/ssh-noti-summary.service" <<'UNIT'
+  cat > "$UNIT_DIR/ssh-noti-summary.service" <<UNIT
 [Unit]
 Description=SSH Notifier Summary Run
 
 [Service]
 Type=oneshot
-User=sshnoti
-Group=sshnoti
+User=${SERVICE_USER}
+Group=${SERVICE_USER}
 ExecStart=/opt/ssh-noti/ssh-noti --batch --config=/opt/ssh-noti/config.json
 UNIT
 
@@ -200,9 +212,9 @@ UNIT
   systemctl daemon-reload
   systemctl enable --now ssh-noti.service
   systemctl enable --now ssh-noti-summary.timer || true
-  echo "Systemd service installed and started: ssh-noti.service"
+  echo "Systemd service installed and started: ssh-noti.service (as ${SERVICE_USER})"
 else
-  echo "systemctl not found; skipping service installation. You can run $INSTALL_DIR/$BIN_NAME --daemon manually or set up a cron/timer alternative." >&2
+  echo "systemctl not found or disabled; skipping service installation. You can run $INSTALL_DIR/$BIN_NAME --daemon manually." >&2
 fi
 
 echo "Installed ssh-noti to $INSTALL_DIR"
