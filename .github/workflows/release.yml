@@ -27,7 +27,17 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          go build -ldflags "-X main.Version=${GITHUB_REF_NAME}" -o dist/ssh-noti_linux_${GOARCH} ./cmd/ssh-noti
+          PKG="./cmd/ssh-noti"
+          if [[ ! -d "$PKG" ]]; then
+            echo "Default package $PKG not found; attempting to auto-detect main package..."
+            PKG=$(go list -f '{{if eq .Name "main"}}{{.Dir}}{{end}}' ./... | grep '/cmd/' | head -n1)
+          fi
+          if [[ -z "$PKG" ]]; then
+            echo "ERROR: Could not locate a main package to build. Ensure your main package is present (e.g., ./cmd/ssh-noti)." >&2
+            exit 1
+          fi
+          echo "Building package: $PKG"
+          go build -ldflags "-X main.Version=${GITHUB_REF_NAME}" -o dist/ssh-noti_linux_${GOARCH} "$PKG"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
