@@ -30,7 +30,7 @@ jobs:
           PKG="./cmd/ssh-noti"
           if [[ ! -d "$PKG" ]]; then
             echo "Default package $PKG not found; attempting to auto-detect main package..."
-            PKG=$(go list -f '{{if eq .Name "main"}}{{.Dir}}{{end}}' ./... | grep '/cmd/' | head -n1)
+            PKG=$(go list -f '{{if eq .Name "main"}}{{.Dir}}{{end}}' ./... | grep -v '^$' | head -n1)
           fi
           if [[ -z "$PKG" ]]; then
             echo "ERROR: Could not locate a main package to build. Ensure your main package is present (e.g., ./cmd/ssh-noti)." >&2
