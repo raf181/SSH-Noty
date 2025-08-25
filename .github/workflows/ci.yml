@@ -60,3 +60,33 @@ jobs:
         with:
           name: ssh-noti_linux_${{ matrix.goarch }}
           path: dist/ssh-noti_linux_${{ matrix.goarch }}
+
+  release:
+    # Publish a rolling prerelease from CI artifacts on pushes to main, or when manually dispatched
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: ls -la dist
+
+      - name: Create/Update Nightly Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: nightly
+          name: Nightly
+          prerelease: true
+          allowUpdates: true
+          removeArtifacts: true
+          makeLatest: false
+          artifacts: |
+            dist/ssh-noti_linux_amd64
+            dist/ssh-noti_linux_arm64
